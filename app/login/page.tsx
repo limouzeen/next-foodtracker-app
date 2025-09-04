@@ -1,21 +1,21 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
+import { useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
 
 // นำรูปมาใช้ (เก็บไว้ใน app/images หรือ src/images)
-import welcomeLogin from '../images/welcome-login.png';
+import welcomeLogin from "../images/welcome-login.png";
 
 export default function LoginPage() {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw, setShowPw]     = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Login payload:', { email, password });
-    alert('Login submitted! (demo)');
+    console.log("Login payload:", { email, password });
+    alert("Login submitted! (demo)");
   };
 
   return (
@@ -34,12 +34,12 @@ export default function LoginPage() {
         {/* Card */}
         <div className="rounded-3xl bg-white/80 p-6 shadow-2xl ring-1 ring-white/40 backdrop-blur">
           {/* Welcome Image */}
-          <div className="relative mx-auto mb-6 h-40 w-40 overflow-hidden rounded-full shadow-lg ring-4 ring-white/60">
+          <div className="relative mx-auto mb-6 h-40 w-40 overflow-hidden rounded-2xl shadow-xl ring-2 ring-white/50">
             <Image
               src={welcomeLogin}
               alt="Welcome illustration"
               fill
-              className="object-cover"
+              className="object-cover transition-transform duration-500 hover:scale-105"
               priority
             />
           </div>
@@ -49,14 +49,18 @@ export default function LoginPage() {
             <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 md:text-4xl">
               Welcome Back
             </h1>
-            <p className="mt-2 text-sm text-neutral-600">Log in to continue your Food Tracker</p>
+            <p className="mt-2 text-sm text-neutral-600">
+              Log in to continue your Food Tracker
+            </p>
           </div>
 
           {/* Form */}
           <form onSubmit={onSubmit} className="space-y-5">
             {/* Email */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-800">อีเมล</label>
+              <label className="mb-1 block text-sm font-medium text-slate-800">
+                อีเมล
+              </label>
               <input
                 type="email"
                 value={email}
@@ -69,10 +73,12 @@ export default function LoginPage() {
 
             {/* Password */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-800">รหัสผ่าน</label>
+              <label className="mb-1 block text-sm font-medium text-slate-800">
+                รหัสผ่าน
+              </label>
               <div className="relative">
                 <input
-                  type={showPw ? 'text' : 'password'}
+                  type={showPw ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -84,7 +90,7 @@ export default function LoginPage() {
                   onClick={() => setShowPw((s) => !s)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg bg-white/80 px-3 py-1 text-xs font-medium text-slate-700 shadow hover:bg-white"
                 >
-                  {showPw ? 'Hide' : 'Show'}
+                  {showPw ? "Hide" : "Show"}
                 </button>
               </div>
             </div>
@@ -101,7 +107,7 @@ export default function LoginPage() {
           {/* Footer links */}
           <div className="mt-6 text-center text-sm">
             <p className="text-neutral-700">
-              Don&apos;t have an account?{' '}
+              Don&apos;t have an account?{" "}
               <Link
                 href="/register"
                 className="bg-gradient-to-r from-pink-500 to-blue-500 bg-clip-text font-semibold text-transparent underline-offset-4 hover:underline"
@@ -115,10 +121,10 @@ export default function LoginPage() {
         {/* Copyright */}
         <footer className="mt-6 rounded-2xl border border-white/30 bg-gradient-to-r from-white/10 via-white/5 to-white/10 py-4 text-center backdrop-blur">
           <p className="text-xs font-light tracking-wider text-white/80">
-            © {new Date().getFullYear()}{' '}
+            © {new Date().getFullYear()}{" "}
             <span className="bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 bg-clip-text font-semibold text-transparent">
               Amarat
-            </span>{' '}
+            </span>{" "}
             · All Rights Reserved
           </p>
         </footer>
