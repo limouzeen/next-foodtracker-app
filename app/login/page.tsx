@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from 'next/navigation';
 
 // นำรูปมาใช้ (เก็บไว้ใน app/images หรือ src/images)
 import welcomeLogin from "../images/welcome-login.png";
@@ -11,11 +12,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
+   const router = useRouter();
+
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    router.push('/dashboard');
     console.log("Login payload:", { email, password });
-    alert("Login submitted! (demo)");
+    
   };
 
   return (
