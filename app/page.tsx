@@ -1,3 +1,4 @@
+
 import Image from "next/image";
 import Link from "next/link";
 
@@ -58,6 +59,18 @@ export default function HomePage() {
           </div>
         </div>
       </main>
+
+            {/* Footer */}
+      <footer className="mt-12 border-t border-white/30 bg-gradient-to-r from-white/10 via-white/5 to-white/10 py-6">
+        <p className="text-center text-sm font-light tracking-wider text-white/70">
+          © ฺ By {new Date().getFullYear()}{" "}
+          <span className="bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 bg-clip-text font-semibold text-transparent">
+            Amarat
+          </span>{" "}
+          · All Rights Reserved
+        </p>
+      </footer>
+
     </div>
   );
 }
