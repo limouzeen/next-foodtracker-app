@@ -54,11 +54,6 @@ export default function RegisterPage() {
     return ext.toLowerCase();
   };
 
-  function getErrorMessage(e: unknown): string {
-    if (e instanceof Error) return e.message;
-    if (typeof e === "string") return e;
-    return "เกิดข้อผิดพลาดระหว่างลงทะเบียน";
-  }
 
 const onSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
