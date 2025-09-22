@@ -1,30 +1,107 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image, { StaticImageData } from 'next/image';
+import { useRouter } from 'next/navigation';
 
-// รูปสำหรับ placeholder และ avatar (ปรับ path ให้ตรงโปรเจกต์)
+import { supabase } from '@/lib/supabaseClient';
+
 import placeholderFood from '../images/food.jpg';
-import userAvatar from '../images/profile.jpg';
+import defaultAvatar from '../images/profile.jpg';
 
 type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 
-export default function AddFoodPage() {
-  // mock ข้อมูลผู้ใช้ที่ล็อกอิน
-  const currentUser: { name: string; avatar: StaticImageData } = {
-    name: 'Amarat',
-    avatar: userAvatar,
-  };
+// ---------- โปรไฟล์ในตาราง user_tb ----------
+type Profile = {
+  fullname: string | null;
+  user_image_url: string | null; // เก็บ public URL หรือ path ของ bucket
+};
 
+export default function AddFoodPage() {
+  const router = useRouter();
+  const sb = supabase();
+
+  // ---------- auth & profile ----------
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | StaticImageData>(defaultAvatar);
+  const [authErr, setAuthErr] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // ---------- form state ----------
   const [name, setName] = useState('');
   const [meal, setMeal] = useState<MealType | ''>('');
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(''); // YYYY-MM-DD
   const [file, setFile] = useState<File | null>(null);
 
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
+
+  // ---------- โหลดผู้ใช้ + โปรไฟล์ ----------
+  useEffect(() => {
+    (async () => {
+      try {
+        setAuthErr(null);
+        setAuthLoading(true);
+
+        // ผู้ใช้ที่ล็อกอิน
+        const { data: u, error: uErr } = await sb.auth.getUser();
+        if (uErr) throw uErr;
+        const user = u.user;
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+        setUserId(user.id);
+        setUserEmail(user.email ?? null);
+
+        // โปรไฟล์จาก user_tb
+        const { data: p, error: pErr } = await sb
+          .from('user_tb')
+          .select('fullname, user_image_url')
+          .eq('id', user.id)
+          .single();
+
+        if (pErr) {
+          // ถ้ายังไม่มีแถว ให้ fallback จาก auth
+          setProfile({
+            fullname: user.user_metadata?.fullname ?? user.email ?? null,
+            user_image_url: null,
+          });
+        } else {
+          setProfile(p as Profile);
+        }
+      } catch (e: unknown) {
+        setAuthErr(e instanceof Error ? e.message : 'โหลดโปรไฟล์ล้มเหลว');
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---------- สร้าง URL รูป (public ใช้ได้เลย / path -> signed URL) ----------
+  useEffect(() => {
+    (async () => {
+      const raw = profile?.user_image_url ?? '';
+      if (!raw) {
+        setAvatarUrl(defaultAvatar);
+        return;
+      }
+      if (raw.startsWith('http://') || raw.startsWith('https://')) {
+        setAvatarUrl(raw);
+        return;
+      }
+      // เป็น path ใน bucket โปรไฟล์ (สมมติชื่อ 'user_bk')
+      const { data, error } = await sb.storage.from('user_bk').createSignedUrl(raw, 60 * 10);
+      setAvatarUrl(!error && data?.signedUrl ? data.signedUrl : defaultAvatar);
+    })();
+  }, [profile, sb]);
 
   const onPickImage = () => inputRef.current?.click();
 
@@ -38,19 +115,81 @@ export default function AddFoodPage() {
     setFile(f);
   };
 
+  const getFileExt = (filename: string) => (filename.split('.').pop() || 'jpg').toLowerCase();
+  const getErrMsg = (e: unknown) =>
+    e instanceof Error ? e.message : typeof e === 'string' ? e : 'บันทึกเมนูไม่สำเร็จ';
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      setErr(null);
+      setLoading(true);
 
-    // สร้าง FormData ส่งไป API (เดโม)
-    const fd = new FormData();
-    fd.append('name', name);
-    fd.append('meal', meal);
-    fd.append('date', date);
-    if (file) fd.append('image', file);
+      // ต้องมีผู้ใช้
+      const { data: u, error: uErr } = await sb.auth.getUser();
+      if (uErr) throw uErr;
+      const user = u.user;
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
 
-    console.log('AddFood payload:', { name, meal, date, file });
-    alert('Saved! (demo)');
+      // ค่าที่บังคับ
+      const foodname = name.trim();
+      const mealText = meal as MealType;
+      const fooddate = date;
+      if (!foodname || !mealText || !fooddate) throw new Error('กรอกข้อมูลให้ครบ');
+
+      // อัปโหลดรูปอาหาร (สมมติ bucket: 'food_bk')
+      let foodImageValue: string | null = null;
+      if (file) {
+        const ext = getFileExt(file.name);
+        const path = `${user.id}/food-${Date.now()}.${ext}`;
+
+        const { error: uploadErr } = await sb.storage.from('food_bk').upload(path, file, { upsert: true });
+        if (uploadErr) throw uploadErr;
+
+        const { data: pub } = sb.storage.from('food_bk').getPublicUrl(path);
+        foodImageValue = pub?.publicUrl || path; // public -> URL, private -> path
+      }
+
+      // insert ลง food_tb
+      const { error: insErr } = await sb.from('food_tb').insert({
+        foodname,
+        meal: mealText,
+        fooddate_at: fooddate,         // YYYY-MM-DD
+        food_image_url: foodImageValue,
+        user_id: user.id,
+      });
+      if (insErr) throw insErr;
+
+      alert('บันทึกสำเร็จ!');
+      router.replace('/dashboard');
+    } catch (e: unknown) {
+      setErr(getErrMsg(e));
+      console.error('AddFood error:', e);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const displayName = profile?.fullname || userEmail || 'User';
+
+  // โหลดโปรไฟล์อยู่ (โชว์สถานะนิดหน่อย)
+  if (authLoading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
+        <div className="rounded-2xl bg-white/80 px-6 py-4 text-slate-700 shadow">กำลังโหลดโปรไฟล์...</div>
+      </div>
+    );
+  }
+  if (authErr) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
+        <div className="rounded-2xl bg-white/80 px-6 py-4 text-red-600 shadow">{authErr}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
@@ -68,10 +207,11 @@ export default function AddFoodPage() {
               title="Go to Profile"
             >
               <span className="relative block h-9 w-9 overflow-hidden rounded-full ring-2 ring-white/60">
-                <Image src={currentUser.avatar} alt={currentUser.name} fill className="object-cover" />
+                {/* ใช้ avatarUrl + displayName ที่โหลดมาจาก Supabase */}
+                <Image src={avatarUrl} alt={displayName} fill className="object-cover" priority />
               </span>
               <span className="bg-gradient-to-r from-pink-500 to-blue-500 bg-clip-text text-sm font-semibold text-transparent">
-                {currentUser.name}
+                {displayName}
               </span>
             </Link>
           </div>
@@ -89,13 +229,7 @@ export default function AddFoodPage() {
               )}
             </div>
 
-            <input
-              ref={inputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onFileChange}
-            />
+            <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
 
             <div className="flex items-center gap-3">
               <button
@@ -165,10 +299,12 @@ export default function AddFoodPage() {
             <div className="md:col-span-2">
               <button
                 type="submit"
-                className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-[1.01] hover:from-pink-600 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300/50"
+                disabled={loading}
+                className="w-full rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-[1.01] hover:from-pink-600 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300/50 disabled:opacity-60"
               >
-                บันทึก
+                {loading ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
+              {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
             </div>
           </form>
 

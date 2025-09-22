@@ -2,9 +2,9 @@
 import { StaticImageData } from 'next/image';
 
 // ปรับ path ให้ตรงโปรเจ็กต์ (จาก lib -> images อยู่ที่ ../images)
-import foodA from '../images/food.jpg';
-import foodB from '../images/foodbanner.jpg';
-import foodC from '../images/profile.jpg';
+import foodA from '../app/images/food.jpg';
+import foodB from '../app/images/foodbanner.jpg';
+import foodC from '../app/images/profile.jpg';
 
 export type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
 export type FoodItem = {

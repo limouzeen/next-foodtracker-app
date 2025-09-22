@@ -4,22 +4,57 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
 // รูป Welcome
 import welcomeLogin from "../images/welcome-login.png";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const sb = supabase();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
-  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  function getErrMsg(e: unknown): string {
+    if (e instanceof Error) return e.message;
+    if (typeof e === "string") return e;
+    return "เกิดข้อผิดพลาดระหว่างเข้าสู่ระบบ";
+  }
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      setErr(null);
+      setLoading(true);
 
-    // สมมติ login ผ่านเสมอ → ไปหน้า dashboard ได้เลย
-    console.log("Login payload:", { email, password });
-    router.push("/dashboard");
+      // 1) ล็อกอินด้วยอีเมล/รหัสผ่าน
+      const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (signInErr) throw signInErr;
+
+      const user = signInData.user;
+      if (!user) throw new Error("ไม่พบผู้ใช้หลังเข้าสู่ระบบ");
+
+      // 2) กันพลาด: ให้แน่ใจว่ามีแถวใน user_tb (บางคนอาจเคยสมัครก่อนคุณทำ upsert ใน Register)
+      await sb.from("user_tb").upsert(
+        { id: user.id, email: user.email ?? null, fullname: user.user_metadata?.fullname ?? null },
+        { onConflict: "id" }
+      );
+
+      // 3) ไปหน้า Dashboard
+      router.replace("/dashboard");
+    } catch (e: unknown) {
+      setErr(getErrMsg(e));
+      console.error("Login error:", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -57,6 +92,13 @@ export default function LoginPage() {
               Log in to continue your Food Tracker
             </p>
           </div>
+
+          {/* Error */}
+          {err && (
+            <p className="mb-4 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700">
+              {err}
+            </p>
+          )}
 
           {/* Form */}
           <form onSubmit={onSubmit} className="space-y-5">
@@ -102,9 +144,10 @@ export default function LoginPage() {
             {/* Submit */}
             <button
               type="submit"
-              className="mt-2 w-full rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-[1.01] hover:from-pink-600 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300/50"
+              disabled={loading}
+              className="mt-2 w-full rounded-xl bg-gradient-to-r from-pink-500 to-indigo-600 px-5 py-3 text-base font-semibold text-white shadow-lg transition-transform hover:scale-[1.01] hover:from-pink-600 hover:to-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300/50 disabled:opacity-50"
             >
-              Login
+              {loading ? "กำลังเข้าสู่ระบบ..." : "Login"}
             </button>
           </form>
 

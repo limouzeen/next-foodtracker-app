@@ -1,92 +1,198 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import Image, { StaticImageData } from 'next/image';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-// รูปตัวอย่าง (ปรับ path ให้ตรงโปรเจ็กต์)
-import foodA from '../../images/food.jpg';
-import foodB from '../../images/foodbanner.jpg';
-import foodC from '../../images/profile.jpg';
-import userAvatar from '../../images/profile.jpg';
-
-type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
-
-type FoodItem = {
-  id: number;
-  name: string;
-  meal: MealType;
-  date: string;               // 'YYYY-MM-DD'
-  image: StaticImageData;
-};
-
-// ---- Mock DB สำหรับเดโม ----
-const MOCK_DB: FoodItem[] = [
-  { id: 1, name: 'Grilled Chicken Salad', meal: 'Lunch',     date: '2025-09-01', image: foodA },
-  { id: 2, name: 'Oatmeal & Berries',     meal: 'Breakfast', date: '2025-09-01', image: foodB },
-  { id: 3, name: 'Protein Smoothie',      meal: 'Snack',     date: '2025-09-01', image: foodC },
-  { id: 4, name: 'Salmon Teriyaki',       meal: 'Dinner',    date: '2025-09-02', image: foodA },
-];
+// ---------- helpers (ใช้ unknown ให้ปลอดภัย) ----------
+function isObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function asNullableString(v: unknown): string | null {
+  return typeof v === "string" ? v : null;
+}
+function asStringOr(v: unknown, fallback: string): string {
+  return typeof v === "string" ? v : fallback;
+}
+type MealType = "Breakfast" | "Lunch" | "Dinner" | "Snack";
+function asMeal(v: unknown): MealType {
+  if (v === "Breakfast" || v === "Lunch" || v === "Dinner" || v === "Snack") return v;
+  return "Breakfast";
+}
+function toDateInputValue(v: unknown): string {
+  // คืนค่า YYYY-MM-DD สำหรับ input[type=date]
+  const d =
+    typeof v === "string" || v instanceof Date
+      ? new Date(v as string | Date)
+      : new Date();
+  if (isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000) // local date
+    .toISOString()
+    .slice(0, 10);
+}
+function toISODateFromInputYMD(ymd: string): string {
+  // แปลง "YYYY-MM-DD" → ISO (ตั้งเวลา 00:00:00 local)
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return new Date().toISOString();
+  const dt = new Date(y, m - 1, d, 0, 0, 0);
+  return dt.toISOString();
+}
 
 export default function UpdateFoodPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const idNum = Number(Array.isArray(params.id) ? params.id[0] : params.id);
+  const foodId = Array.isArray(params.id) ? params.id[0] : params.id;
 
-  // mock ผู้ใช้ที่ล็อกอิน (สำหรับมุมขวาบน)
-  const currentUser = { name: 'Amarat', avatar: userAvatar as StaticImageData };
+  const sb = supabase();
 
-  // state ฟอร์ม
-  const [name, setName]   = useState('');
-  const [meal, setMeal]   = useState<MealType | ''>('');
-  const [date, setDate]   = useState('');
-  const [file, setFile]   = useState<File | null>(null);
-  const [baseImage, setBaseImage] = useState<StaticImageData | null>(null);
+  // ---------- auth ----------
+  const [userId, setUserId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authErr, setAuthErr] = useState<string | null>(null);
+
+  // ---------- form state ----------
+  const [name, setName] = useState("");
+  const [meal, setMeal] = useState<MealType>("Breakfast");
+  const [date, setDate] = useState<string>(""); // YYYY-MM-DD
+  const [file, setFile] = useState<File | null>(null);
+  const [baseImageUrl, setBaseImageUrl] = useState<string | null>(null); // URL ที่แสดงเมื่อยังไม่เปลี่ยนรูป
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const onPickImage = () => inputRef.current?.click();
 
-  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : ""), [file]);
 
+  // ---------- เลือกรูป ----------
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!f.type.startsWith('image/')) {
-      alert('Please select an image file');
+    if (!f.type.startsWith("image/")) {
+      alert("Please select an image file");
       return;
     }
     setFile(f);
   };
 
-  // โหลดข้อมูลเดิมตาม id (mock)
+  // ---------- โหลดผู้ใช้ ----------
   useEffect(() => {
-    if (!Number.isFinite(idNum)) return;
-    const found = MOCK_DB.find((x) => x.id === idNum);
-    if (found) {
-      setName(found.name);
-      setMeal(found.meal);
-      setDate(found.date);
-      setBaseImage(found.image);
-    } else {
-      // ถ้าไม่พบ กลับไปหน้า dashboard (หรือจะแสดง not found ในหน้านี้ก็ได้)
-      // router.replace('/dashboard');
-    }
-  }, [idNum, router]);
+    (async () => {
+      try {
+        setAuthErr(null);
+        setAuthLoading(true);
+        const { data: userData, error } = await sb.auth.getUser();
+        if (error) throw error;
+        const user = userData.user;
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+        setUserId(user.id);
+      } catch (e) {
+        setAuthErr(e instanceof Error ? e.message : "Auth error");
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // ---------- โหลดข้อมูลอาหารตาม id ----------
+  useEffect(() => {
+    if (!userId || !foodId) return;
+
+    (async () => {
+      const { data, error } = await sb
+        .from("food_tb")
+        .select("id, user_id, foodname, meal, fooddate_at, food_image_url")
+        .eq("id", foodId)
+        .single();
+
+      if (error || !data) {
+        alert("ไม่พบรายการอาหารนี้หรือคุณไม่มีสิทธิ์เข้าถึง");
+        router.replace("/dashboard");
+        return;
+      }
+
+      // guard & ตรวจว่าของ user นี้จริงไหม
+      if (!isObj(data) || asStringOr(data.user_id, "") !== userId) {
+        alert("ไม่พบรายการอาหารนี้หรือคุณไม่มีสิทธิ์เข้าถึง");
+        router.replace("/dashboard");
+        return;
+      }
+
+      // set form
+      setName(asStringOr(data.foodname, "(ไม่มีชื่ออาหาร)"));
+      setMeal(asMeal(data.meal));
+      setDate(toDateInputValue(data.fooddate_at));
+
+      // สร้าง URL ของรูป (รองรับทั้ง external URL และ path ใน bucket)
+      const raw = asNullableString(data.food_image_url);
+      if (!raw) {
+        setBaseImageUrl(null);
+      } else if (raw.startsWith("http://") || raw.startsWith("https://")) {
+        setBaseImageUrl(raw);
+      } else {
+        const { data: publicUrl } = sb.storage.from("food_bk").getPublicUrl(raw);
+        setBaseImageUrl(publicUrl.publicUrl ?? null);
+      }
+    })();
+  }, [sb, userId, foodId, router]);
+
+  // ---------- submit (update + อัปโหลดไฟล์ถ้ามี) ----------
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: PATCH /api/foods/{idNum}
-    const fd = new FormData();
-    fd.append('name', name);
-    fd.append('meal', meal);
-    fd.append('date', date);
-    if (file) fd.append('image', file);
+    if (!userId || !foodId) return;
 
-    console.log('UpdateFood payload:', { id: idNum, name, meal, date, file });
-    alert('Food updated! (demo)');
-    // router.push('/dashboard');
+    let imagePathToSave: string | undefined;
+
+    // มีไฟล์ใหม่ → อัปโหลด
+    if (file) {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `user-${userId}/${foodId}-${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage.from("food_bk").upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+      });
+      if (upErr) {
+        alert(`อัปโหลดรูปไม่สำเร็จ: ${upErr.message}`);
+        return;
+      }
+      imagePathToSave = path; // เก็บ "path" ลง DB (dashboard จะ gen public URL เอง)
+    }
+
+    const payload: Record<string, unknown> = {
+      foodname: name,
+      meal,
+      fooddate_at: toISODateFromInputYMD(date),
+    };
+    if (imagePathToSave) payload.food_image_url = imagePathToSave;
+
+    const { error: updErr } = await sb.from("food_tb").update(payload).eq("id", foodId);
+    if (updErr) {
+      alert(`อัปเดตไม่สำเร็จ: ${updErr.message}`);
+      return;
+    }
+
+    alert("อัปเดตสำเร็จ!");
+    router.push("/dashboard");
   };
+
+  if (authLoading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
+        <div className="rounded-2xl bg-white/80 px-6 py-4 text-slate-700 shadow">กำลังโหลด...</div>
+      </div>
+    );
+  }
+  if (authErr) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
+        <div className="rounded-2xl bg-white/80 px-6 py-4 text-red-600 shadow">{authErr}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-300 via-fuchsia-300 to-pink-300">
@@ -98,16 +204,10 @@ export default function UpdateFoodPage() {
           </h1>
           <div className="flex items-center gap-3">
             <Link
-              href="/profile"
-              className="group flex items-center gap-3 rounded-full bg-white/80 pl-1 pr-3 py-1 shadow ring-1 ring-white/50 backdrop-blur transition hover:bg-white"
-              title="Go to Profile"
+              href="/dashboard"
+              className="group flex items-center gap-2 rounded-full bg-white/80 px-4 py-1 text-sm font-medium text-slate-800 shadow ring-1 ring-white/50 backdrop-blur transition hover:bg-white"
             >
-              <span className="relative block h-9 w-9 overflow-hidden rounded-full ring-2 ring-white/60">
-                <Image src={currentUser.avatar} alt={currentUser.name} fill className="object-cover" />
-              </span>
-              <span className="bg-gradient-to-r from-pink-500 to-blue-500 bg-clip-text text-sm font-semibold text-transparent">
-                {currentUser.name}
-              </span>
+              ← Back to Dashboard
             </Link>
           </div>
         </div>
@@ -119,8 +219,8 @@ export default function UpdateFoodPage() {
             <div className="relative h-40 w-40 overflow-hidden rounded-2xl bg-white/70 shadow-xl ring-2 ring-white/60">
               {previewUrl ? (
                 <Image src={previewUrl} alt="Food preview" fill className="object-cover" unoptimized priority />
-              ) : baseImage ? (
-                <Image src={baseImage} alt="Food current" fill className="object-cover" priority />
+              ) : baseImageUrl ? (
+                <Image src={baseImageUrl} alt="Food current" fill className="object-cover" priority />
               ) : (
                 <div className="grid h-full w-full place-items-center text-sm text-slate-500">No Image</div>
               )}
@@ -136,13 +236,16 @@ export default function UpdateFoodPage() {
               >
                 Choose Photo
               </button>
-              {(file || baseImage) && (
+              {(file || baseImageUrl) && (
                 <button
                   type="button"
-                  onClick={() => { setFile(null); setBaseImage(null); }}
+                  onClick={() => {
+                    setFile(null);
+                    setBaseImageUrl(null);
+                  }}
                   className="rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-slate-800 shadow hover:bg-white"
                 >
-                  Remove
+                Remove
                 </button>
               )}
             </div>
@@ -170,7 +273,6 @@ export default function UpdateFoodPage() {
                 required
                 className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400/30"
               >
-                <option value="">โปรดเลือก</option>
                 <option value="Breakfast">Breakfast</option>
                 <option value="Lunch">Lunch</option>
                 <option value="Dinner">Dinner</option>
@@ -198,20 +300,15 @@ export default function UpdateFoodPage() {
               </button>
             </div>
           </form>
-
-          <div className="mt-6 text-center">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-medium text-slate-800 shadow-sm backdrop-blur transition hover:scale-[1.02] hover:bg-white"
-            >
-              ← Back to Dashboard
-            </Link>
-          </div>
         </div>
 
         <footer className="rounded-2xl border border-white/30 bg-gradient-to-r from-white/10 via-white/5 to-white/10 py-4 text-center backdrop-blur">
           <p className="text-xs font-light tracking-wider text-white/80">
-            © {new Date().getFullYear()} <span className="bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 bg-clip-text font-semibold text-transparent">Amarat</span> · All Rights Reserved
+            © {new Date().getFullYear()}{" "}
+            <span className="bg-gradient-to-r from-pink-400 via-purple-400 to-blue-400 bg-clip-text font-semibold text-transparent">
+              Amarat
+            </span>{" "}
+            · All Rights Reserved
           </p>
         </footer>
       </main>
