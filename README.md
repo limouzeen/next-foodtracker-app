@@ -1,7 +1,7 @@
 # 🍽️ Food Tracker App
 
 <p align="center">
-  <img src="./public/readme/home-preview.png" alt="Home Page" width="80%" />
+  
 </p>
 
 <p align="center">
