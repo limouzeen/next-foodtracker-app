@@ -40,11 +40,6 @@
 - [About](#-about)
 - [Tech Stack](#-tech-stack)
 - [Getting Started](#-getting-started)
-- [Environment Variables](#-environment-variables)
-- [Folder Structure](#-folder-structure)
-- [Screenshots](#-screenshots)
-- [Deployment](#-deployment)
-- [License](#-license)
 
 ---
 
