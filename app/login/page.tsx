@@ -2,8 +2,6 @@
 
 export const dynamic = "force-dynamic";
 
-
-
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -24,7 +22,13 @@ export default function LoginPage() {
   const [err, setErr] = useState<string | null>(null);
 
   function getErrMsg(e: unknown): string {
-    if (e instanceof Error) return e.message;
+    if (e instanceof Error) {
+      // map ข้อความยอดฮิตจาก Supabase
+      if (/Invalid login credentials/i.test(e.message)) {
+        return "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+      }
+      return e.message;
+    }
     if (typeof e === "string") return e;
     return "เกิดข้อผิดพลาดระหว่างเข้าสู่ระบบ";
   }
@@ -35,24 +39,35 @@ export default function LoginPage() {
       setErr(null);
       setLoading(true);
 
+      // อย่า trim password — เคารพรหัสที่ผู้ใช้ตั้ง
+      const emailToUse = email.trim();
+
       // 1) ล็อกอินด้วยอีเมล/รหัสผ่าน
-      const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { data: signInData, error: signInErr } =
+        await sb.auth.signInWithPassword({
+          email: emailToUse,
+          password, // no trim
+        });
       if (signInErr) throw signInErr;
 
       const user = signInData.user;
       if (!user) throw new Error("ไม่พบผู้ใช้หลังเข้าสู่ระบบ");
 
-      // 2) กันพลาด: ให้แน่ใจว่ามีแถวใน user_tb (บางคนอาจเคยสมัครก่อนคุณทำ upsert ใน Register)
-      await sb.from("user_tb").upsert(
-        { id: user.id, email: user.email ?? null, fullname: user.user_metadata?.fullname ?? null },
-        { onConflict: "id" }
-      );
-
+      // 2) กันพลาด: สร้าง/อัปเดตแถวใน user_tb ให้มีเสมอ
+      await sb
+  .from("user_tb")
+  .upsert(
+    {
+      id: user.id,
+      email: user.email ?? null,
+      
+    },
+    { onConflict: "id", ignoreDuplicates: true } //  แค่ insert ถ้ายังไม่มี
+  );
       // 3) ไปหน้า Dashboard
       router.replace("/dashboard");
+      // เผื่อฝั่ง server มีการอ่าน session
+      router.refresh();
     } catch (e: unknown) {
       setErr(getErrMsg(e));
       console.error("Login error:", e);
@@ -82,6 +97,7 @@ export default function LoginPage() {
               src={welcomeLogin}
               alt="Welcome illustration"
               fill
+              sizes="10rem" // ✅ แก้ warning ของ Next/Image เมื่อใช้ fill
               className="object-cover transition-transform duration-500 hover:scale-105"
               priority
             />
@@ -105,7 +121,11 @@ export default function LoginPage() {
           )}
 
           {/* Form */}
-          <form onSubmit={onSubmit} className="space-y-5">
+          <form
+            onSubmit={onSubmit}
+            className="space-y-5"
+            autoComplete="off" // ✅ กัน browser autofill รหัสเก่า
+          >
             {/* Email */}
             <div>
               <label className="mb-1 block text-sm font-medium text-slate-800">
@@ -118,6 +138,10 @@ export default function LoginPage() {
                 required
                 placeholder="you@example.com"
                 className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400/30"
+                autoComplete="username"     // ✅ ช่วย browser รู้ว่าเป็นอีเมล
+                name="login-email"          // ✅ เปลี่ยน name กัน reuse autofill เก่า
+                inputMode="email"
+                spellCheck={false}
               />
             </div>
 
@@ -134,6 +158,9 @@ export default function LoginPage() {
                   required
                   placeholder="••••••••"
                   className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 pr-28 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-400/30"
+                  autoComplete="current-password" // ✅ ชี้ชัดว่าเป็นรหัสปัจจุบัน
+                  name="login-password-current"   // ✅ กัน autofill รหัสเก่าทับ
+                  spellCheck={false}
                 />
                 <button
                   type="button"
