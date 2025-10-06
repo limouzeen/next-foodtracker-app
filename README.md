@@ -38,7 +38,7 @@
 
 ## 📋 Table of Contents
 - [About](#-about)
-- [Tech Stack](#-tech-stack)
+- [Tech Stack](#%EF%B8%8F-tech-stack)
 - [Getting Started](#-getting-started)
 
 ---
